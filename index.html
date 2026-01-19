@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A complete RAG (Retrieval-Augmented Generation) pipeline running entirely in your browser using WebGPU, Transformers.js, and WebLLM.">
+    <title>On-Device RAG | Private Browser AI</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🧠 On-Device RAG</h1>
+            <p class="subtitle">100% Browser-Based • Zero Server Costs • Complete Privacy</p>
+        </header>
+
+        <!-- WebGPU Warning -->
+        <div id="webgpu-warning" class="warning-banner hidden">
+            ⚠️ <strong>WebGPU not detected.</strong> The LLM will not be available. 
+            Embedding and search still work. Use Chrome 113+ for full features.
+        </div>
+
+        <!-- Knowledge Base Section -->
+        <section class="card" id="knowledge-section">
+            <div class="card-header">
+                <div>
+                    <h2 class="card-title">📚 Knowledge Base</h2>
+                    <p class="card-subtitle">Drag & drop PDF/text files or paste text below</p>
+                </div>
+                <div id="chunk-stats" class="stat">No data</div>
+            </div>
+            
+            <!-- Drop Zone -->
+            <div id="drop-zone" class="drop-zone">
+                <div class="drop-zone-content">
+                    <span class="drop-icon">📄</span>
+                    <p>Drag & drop PDF or text files here</p>
+                    <span class="drop-hint">or click to browse</span>
+                </div>
+                <!-- Document Grid (Desktop Icons) - Inside drop zone -->
+                <div id="document-grid" class="document-grid"></div>
+                <input type="file" id="file-input" accept=".pdf,.txt,.md" multiple class="hidden">
+            </div>
+
+            <!-- Text Input -->
+            <details class="text-input-details">
+                <summary>Or paste text manually</summary>
+                <textarea 
+                    id="corpus" 
+                    placeholder="Paste your text here..."
+                ></textarea>
+                <button id="btn-add-text" class="btn-secondary">
+                    ➕ Add Text
+                </button>
+            </details>
+            
+            <div class="button-group">
+                <button id="btn-ingest" class="btn-primary" disabled>
+                    ⚡ Ingest All Documents
+                </button>
+                <button id="btn-clear" class="btn-danger" disabled>
+                    🗑️ Clear All
+                </button>
+                <button id="btn-export" class="btn-secondary" disabled>
+                    📤 Export
+                </button>
+                <button id="btn-import" class="btn-secondary" disabled>
+                    📥 Import
+                </button>
+                <button id="btn-load-demo" class="btn-secondary" style="background-color: #e0f2fe; color: #0369a1; border-color: #bae6fd;" disabled>
+                    📚 Load Wikipedia Demo
+                </button>
+                <input type="file" id="import-file" accept=".json,.gz" class="hidden">
+            </div>
+        </section>
+
+        <!-- Query Section -->
+        <section class="card" id="query-section">
+            <div class="card-header">
+                <div>
+                    <h2 class="card-title">❓ Ask a Question</h2>
+                    <p class="card-subtitle">Query uses hybrid search (BM25 + Semantic)</p>
+                </div>
+            </div>
+            
+            <div class="query-row">
+                <input 
+                    type="text" 
+                    id="query" 
+                    placeholder="e.g., What is photosynthesis? Where is the Eiffel Tower?" 
+                    disabled
+                >
+                <select id="search-mode" disabled>
+                    <option value="hybrid">🔀 Hybrid</option>
+                    <option value="semantic">🎯 Semantic</option>
+                </select>
+                <button id="btn-ask" class="btn-success" disabled>
+                    🚀 Generate
+                </button>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <section class="card" id="results-section">
+            <div class="card-header">
+                <h2 class="card-title">💬 Answer</h2>
+            </div>
+            <div id="metrics"></div>
+            <div id="output"></div>
+        </section>
+
+        <!-- Retrieved Context Section -->
+        <section class="card" id="context-section">
+            <div class="card-header">
+                <div>
+                    <h2 class="card-title">🔍 Retrieved Context</h2>
+                    <p class="card-subtitle">Top matching chunks with relevance scores</p>
+                </div>
+            </div>
+            <div id="context"></div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="text-center mt-md">
+            <p style="color: var(--text-muted); font-size: 0.85rem;">
+                Powered by 
+                <a href="https://huggingface.co/docs/transformers.js" target="_blank" style="color: var(--accent-primary);">Transformers.js</a> + 
+                <a href="https://webllm.mlc.ai/" target="_blank" style="color: var(--accent-primary);">WebLLM</a> +
+                <a href="https://mozilla.github.io/pdf.js/" target="_blank" style="color: var(--accent-primary);">PDF.js</a>
+                <br>
+                <span id="footer-models" class="model-selector-trigger" title="Click to change model">Loading models...</span>
+                <br>
+                <button id="btn-status" class="btn-link" style="margin-top: 8px; font-size: 0.8rem; color: var(--text-secondary); background: none; border: none; padding: 0; text-decoration: underline; cursor: pointer;">Project Status</button>
+            </p>
+        </footer>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast-container">
+        <div id="toast" class="toast hidden">
+            <div id="toast-indicator" class="toast-indicator loading"></div>
+            <div class="toast-content">
+                <div class="toast-title" id="toast-title">Processing</div>
+                <div class="toast-message" id="toast-message">Embedding documents...</div>
+                <div class="toast-progress">
+                    <div class="toast-progress-bar" id="toast-progress" style="width: 0%"></div>
+                </div>
+            </div>
+            <button id="toast-close" class="toast-close hidden" title="Dismiss">×</button>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <h3 class="modal-title" id="modal-title">Confirm Action</h3>
+            <p class="modal-message" id="modal-message">Are you sure?</p>
+            <div class="modal-actions">
+                <button id="btn-modal-cancel" class="btn-secondary">Cancel</button>
+                <button id="btn-modal-confirm" class="btn-danger">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Model Selector Modal -->
+    <div id="model-modal" class="modal-overlay hidden">
+        <div class="modal model-selector-modal">
+            <h3 class="modal-title">🤖 Select LLM Model</h3>
+            <p class="modal-subtitle">Choose a model based on your needs</p>
+            <div id="model-options" class="model-options"></div>
+            <div class="modal-actions">
+                <button id="btn-model-cancel" class="btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Project Status Modal -->
+    <div id="status-modal" class="modal-overlay hidden">
+        <div class="modal status-modal" style="max-width: 600px;">
+            <h3 class="modal-title">📌 Project Status & Vision</h3>
+            <div class="modal-content" style="text-align: left; margin-top: 1rem; max-height: 70vh; overflow-y: auto;">
+                
+                <h4 style="color: var(--text-primary); margin-bottom: 0.5rem;">1. Vision</h4>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
+                    On-Device RAG has a bright future. Just as traditional desktop apps (Word, Excel, Photoshop) expanded to the web, AI is now moving from the cloud to your device—bringing privacy, speed, and offline capability.
+                </p>
+
+                <h4 style="color: var(--text-primary); margin-bottom: 0.5rem;">2. Methodology</h4>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.5rem;">Overview of the internal RAG (Retrieval-Augmented Generation) pipeline:</p>
+                <ul style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; padding-left: 1.2rem;">
+                    <li><strong>Ingestion:</strong> Documents are split into segments (chunks) and converted into numerical vectors using a local embedding model.</li>
+                    <li><strong>Storage:</strong> Vectors are stored locally in your browser (IndexedDB), ensuring complete privacy.</li>
+                    <li><strong>Retrieval:</strong> A hybrid search approach combines <strong>Semantic Search</strong> (meaning-based) and <strong>Keyword Search</strong> (BM25) to find the most relevant context.</li>
+                    <li><strong>Generation:</strong> An optimized LLM (running via WebGPU) uses the retrieved context to generate a factual answer.</li>
+                </ul>
+
+                <h4 style="color: var(--text-primary); margin-bottom: 0.5rem;">3. Current Capabilities</h4>
+                <ul style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; padding-left: 1.2rem;">
+                    <li>Excel at direct Q&A (e.g., "What is photosynthesis?", "Where is the Eiffel Tower?").</li>
+                    <li>Best suited for short, factual answers based on your documents.</li>
+                </ul>
+
+                <h4 style="color: var(--text-primary); margin-bottom: 0.5rem;">4. Assumptions</h4>
+                <ul style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; padding-left: 1.2rem;">
+                    <li>Users prefer privacy and clear, direct answers over conversational chit-chat.</li>
+                </ul>
+
+                <h4 style="color: var(--text-primary); margin-bottom: 0.5rem;">5. Limitations</h4>
+                <ul style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; padding-left: 1.2rem;">
+                    <li><strong>Indirect Questions:</strong> May struggle with implied or highly nuanced questions compared to larger models.</li>
+                    <li><strong>Model Size:</strong> Running in the browser means using smaller, optimized models, which may have less general "world knowledge."</li>
+                    <li><strong>Browser Limits:</strong> Performance depends on your device's GPU and memory.</li>
+                </ul>
+
+                <h4 style="color: var(--text-primary); margin-bottom: 0.5rem;">6. How to Test</h4>
+                <ul style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; padding-left: 1.2rem;">
+                    <li><strong>Load Data:</strong> Click "Load Wikipedia Demo" or drag & drop your own PDF/text files.</li>
+                    <li><strong>Go Offline (optional):</strong> Disconnect your internet to verify the app works entirely offline.</li>
+                    <li><strong>Ask Questions:</strong> Try direct questions like "What is [Topic]?" based on your data.</li>
+                    <li><strong>Push Limits:</strong> Try asking indirect questions to see where the smaller model might struggle.</li>
+                </ul>
+            </div>
+            <div class="modal-actions" style="margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+                <button id="btn-status-close" class="btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application Script -->
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
