@@ -176,6 +176,8 @@ score = Σ 1/(k + rank)  // k=60 is empirically optimal
 Top 3 Chunks (by RRF score) is sent to LLM for generating Response
 ```
 
+> **Why RRF?** It combines rankings without needing score normalization — BM25 scores (0-10+) and cosine similarity (0-1) have incompatible scales, but ranks are universal.
+
 ### Why Overlapping Chunks?
 
 Without overlap, context at chunk boundaries is lost:
@@ -194,9 +196,7 @@ With 50-char overlap, the boundary text appears in both chunks.
 | Synchronous | Async, non-blocking |
 | No transactions | ACID transactions |
 
-```
-
-> **Why RRF?** It combines rankings without needing score normalization — BM25 scores (0-10+) and cosine similarity (0-1) have incompatible scales, but ranks are universal.
+### 🧠 Prompt Engineering
 
 **Prompt structure** (from `llm.js`):
 ```
