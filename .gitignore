@@ -23,6 +23,10 @@ Thumbs.db
 *.gz
 *.txt
 
+# Allow split parts
+!*.rag.gz.part*
+
+
 # Environment variables
 .env
 .env.local

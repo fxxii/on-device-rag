@@ -1118,16 +1118,57 @@ async function loadDemoData() {
     showToast('Fetching demo data...', 10, 'loading');
 
     try {
-        // Load binary format only
-        const response = await fetch('plain-text-wikipedia-simpleenglish.rag.gz');
-        
-        if (!response.ok) {
-            throw new Error('plain-text-wikipedia-simpleenglish.rag.gz not found.');
+        // Try to fetch parts (GitHub Pages workaround for >100MB files)
+        const FILE_BASE = 'plain-text-wikipedia-simpleenglish.rag.gz';
+        let responseStream;
+        let contentLength = 0;
+
+        try {
+            // First check if single file exists (local dev or external host)
+            const headCheck = await fetch(FILE_BASE, { method: 'HEAD' });
+            if (headCheck.ok) {
+                const response = await fetch(FILE_BASE);
+                responseStream = response.body;
+                contentLength = parseInt(response.headers.get('content-length') || '0');
+            } else {
+                 throw new Error('Single file not found, trying parts...');
+            }
+        } catch (e) {
+            // Fallback to parts
+            console.log('Fetching split parts...');
+            const parts = [];
+            let partIndex = 1;
+            
+            // Fetch parts until 404
+            while (true) {
+                const partName = `${FILE_BASE}.part${String(partIndex).padStart(3, '0')}`;
+                showToast(`Fetching part ${partIndex}...`, 10, 'loading');
+                
+                try {
+                    const response = await fetch(partName);
+                    if (!response.ok) break;
+                    
+                    const blob = await response.blob();
+                    parts.push(blob);
+                    contentLength += blob.size;
+                    partIndex++;
+                } catch (err) {
+                    break;
+                }
+            }
+            
+            if (parts.length === 0) {
+                throw new Error('No demo data found (checked single file and parts).');
+            }
+            
+            // Combine parts into a single stream
+            const combinedBlob = new Blob(parts);
+            responseStream = combinedBlob.stream();
         }
 
         // Decompress with progress by reading chunks
-        showToast('Decompressing... 0MB', 30, 'loading');
-        const decompressedStream = response.body.pipeThrough(new DecompressionStream('gzip'));
+        showToast(`Decompressing... ${(contentLength / 1024 / 1024).toFixed(1)}MB`, 30, 'loading');
+        const decompressedStream = responseStream.pipeThrough(new DecompressionStream('gzip'));
         const reader = decompressedStream.getReader();
         
         const chunks = [];
